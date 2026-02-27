@@ -40,7 +40,6 @@ jobs:
       - name: Synthesise CDK template and lint with cfn-lint
         run: |
           npx cdk synth --app "npx ts-node infrastructure/bin/app.ts" --quiet
-          pip install cfn-lint --quiet
           cfn-lint cdk.out/*.template.json
 
   unit-test:
