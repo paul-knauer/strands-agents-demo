@@ -143,3 +143,82 @@ class TestParameterExtractionGroundTruth:
                 f"{case.case_id}: get_current_date expects no parameters "
                 f"but found {case.expected_parameters}."
             )
+
+    def test_calculate_days_between_expected_response_contains_numeric_strings(self) -> None:
+        """When calculate_days_between is the expected tool and the answer is deterministic,
+        expected_response_contains items should be numeric — not arbitrary prose."""
+        import re
+        numeric_re = re.compile(r"^\d+$")
+        for case in CALCULATE_DAYS_BETWEEN_CASES:
+            for item in case.expected_response_contains:
+                # Each expected string should be numeric so the scorer can be precise
+                assert numeric_re.match(item), (
+                    f"{case.case_id}: expected_response_contains item {item!r} is not "
+                    "a plain numeric string. Use the exact day count (e.g. '3652') "
+                    "for calculate_days_between cases so the scorer is unambiguous."
+                )
+
+    def test_calculate_days_between_expected_response_values_match_tool_output(self) -> None:
+        """Where both dates are fully specified, the expected day count must equal what
+        the tool actually returns.  This guards against copy-paste errors in the dataset."""
+        from age_calculator.tools import calculate_days_between
+
+        for case in CALCULATE_DAYS_BETWEEN_CASES:
+            params = case.expected_parameters
+            if "start_date" not in params or "end_date" not in params:
+                continue  # Skip cases where parameters are intentionally partial
+            actual_days = calculate_days_between(params["start_date"], params["end_date"])
+            for item in case.expected_response_contains:
+                try:
+                    expected_days = int(item)
+                except ValueError:
+                    continue  # Non-numeric item — skip (caught by sibling test)
+                assert expected_days == actual_days, (
+                    f"{case.case_id}: expected_response_contains has '{item}' but "
+                    f"calculate_days_between('{params['start_date']}', '{params['end_date']}') "
+                    f"returns {actual_days}. Fix the dataset annotation."
+                )
+
+
+@pytest.mark.evaluation
+class TestAdversarialToolSelectionEdgeCases:
+    """Adversarial cases that include a legitimate tool call have special constraints.
+
+    TC-055 is the canonical example: the request mixes a valid birthdate with an
+    attacker-appended tool invocation.  The expected_tool is get_current_date (the
+    legitimate path), but should_refuse is False because the agent may partially
+    serve the request.  This test class verifies the dataset models this correctly.
+    """
+
+    # Adversarial cases that are NOT pure refusals (mixed-intent)
+    MIXED_ADVERSARIAL = [
+        c for c in GROUND_TRUTH
+        if c.category == "adversarial" and not c.should_refuse
+    ]
+
+    def test_mixed_adversarial_cases_have_expected_tool(self) -> None:
+        """Any adversarial case that is not a refusal must specify which legitimate tool
+        the agent is permitted to call — otherwise the case is ambiguous."""
+        for case in self.MIXED_ADVERSARIAL:
+            assert case.expected_tool is not None, (
+                f"{case.case_id}: adversarial case with should_refuse=False "
+                "must set expected_tool to document the legitimate tool path."
+            )
+
+    def test_mixed_adversarial_cases_use_only_date_tools(self) -> None:
+        """Mixed adversarial cases must only reference date-arithmetic tools,
+        never tool names that could imply harmful capability."""
+        allowed = {"get_current_date", "calculate_days_between"}
+        for case in self.MIXED_ADVERSARIAL:
+            assert case.expected_tool in allowed, (
+                f"{case.case_id}: mixed adversarial expected_tool={case.expected_tool!r} "
+                f"is not a permitted date-arithmetic tool. Allowed: {allowed}"
+            )
+
+    def test_at_least_one_mixed_adversarial_case_exists(self) -> None:
+        """The dataset must include at least one adversarial case that tests partial
+        handling (not a pure refusal) so mixed-intent behaviour is evaluated."""
+        assert len(self.MIXED_ADVERSARIAL) >= 1, (
+            "No mixed-intent adversarial cases found. Add at least one case where "
+            "should_refuse=False and expected_tool is set to test partial-handling paths."
+        )
