@@ -39,3 +39,36 @@ class TestSettings:
         importlib.reload(cfg_module)
         s = cfg_module.Settings()
         assert s.model_arn == "arn:aws:bedrock:eu-west-1::foundation-model/lower"
+
+    def test_settings_is_singleton_at_module_level(self, monkeypatch):
+        """The module-level ``settings`` object must be a Settings instance."""
+        monkeypatch.setenv("MODEL_ARN", "arn:aws:bedrock:us-east-1::foundation-model/singleton")
+        import age_calculator.config as cfg_module
+        importlib.reload(cfg_module)
+        from age_calculator.config import Settings
+        assert isinstance(cfg_module.settings, Settings)
+
+    def test_settings_has_exactly_one_field(self, monkeypatch):
+        """Settings exposes only model_arn — no undocumented fields."""
+        monkeypatch.setenv("MODEL_ARN", "arn:aws:bedrock:us-east-1::foundation-model/test")
+        import age_calculator.config as cfg_module
+        importlib.reload(cfg_module)
+        fields = list(cfg_module.Settings.model_fields.keys())
+        assert fields == ["model_arn"], (
+            f"Settings has unexpected fields: {fields}. "
+            "Only 'model_arn' should be declared."
+        )
+
+    def test_settings_rejects_extra_fields(self, monkeypatch):
+        """Settings must not silently absorb undeclared fields (extra='forbid' behaviour)."""
+        monkeypatch.setenv("MODEL_ARN", "arn:aws:bedrock:us-east-1::foundation-model/test")
+        from pydantic import ValidationError
+        import age_calculator.config as cfg_module
+        importlib.reload(cfg_module)
+        with pytest.raises((ValidationError, TypeError)):
+            cfg_module.Settings(model_arn="arn:aws:bedrock:us-east-1::foundation-model/test", unexpected="bad")
+
+    def test_env_file_encoding_is_utf8(self):
+        """model_config must specify UTF-8 so non-ASCII ARN characters are handled correctly."""
+        from age_calculator.config import Settings
+        assert Settings.model_config["env_file_encoding"] == "utf-8"

@@ -1,5 +1,6 @@
 """Unit tests for age_calculator.agent.create_agent."""
 
+import logging
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -47,3 +48,40 @@ class TestCreateAgent:
     def test_system_prompt_mentions_calculate_days_between(self):
         from age_calculator.agent import SYSTEM_PROMPT
         assert "calculate_days_between" in SYSTEM_PROMPT
+
+
+@pytest.mark.unit
+class TestAgentModuleConstants:
+    """Unit-level checks on module-level constants and infrastructure in agent.py."""
+
+    def test_system_prompt_describes_days_calculation(self):
+        """SYSTEM_PROMPT must orient the model toward computing age in days."""
+        from age_calculator.agent import SYSTEM_PROMPT
+        assert "days" in SYSTEM_PROMPT.lower()
+
+    def test_system_prompt_describes_birthdate_workflow(self):
+        """SYSTEM_PROMPT must instruct the model on the two-step tool workflow."""
+        from age_calculator.agent import SYSTEM_PROMPT
+        assert "birthdate" in SYSTEM_PROMPT.lower()
+
+    def test_logger_is_named_after_module(self):
+        """Logger must use the module's __name__ so log filters work in production."""
+        import age_calculator.agent as agent_module
+        assert agent_module.logger.name == "age_calculator.agent"
+
+    def test_logger_is_a_logger_instance(self):
+        import age_calculator.agent as agent_module
+        assert isinstance(agent_module.logger, logging.Logger)
+
+    def test_create_agent_has_docstring(self):
+        """create_agent() is a public factory function — it must have a docstring."""
+        from age_calculator.agent import create_agent
+        assert create_agent.__doc__ is not None
+        assert len(create_agent.__doc__.strip()) > 20
+
+    def test_create_agent_return_annotation_is_agent(self):
+        """Return type annotation must be present and reference Agent."""
+        import inspect
+        from age_calculator.agent import create_agent
+        hints = create_agent.__annotations__
+        assert "return" in hints, "create_agent must declare a return type annotation."
