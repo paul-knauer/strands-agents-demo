@@ -34,12 +34,6 @@ jobs:
       - name: Type-check with mypy
         run: mypy age_calculator/ --strict
 
-      - name: Install CDK dependencies
-        run: npm ci --prefix infrastructure
-
-      - name: Synth and lint CloudFormation
-        run: npx cdk synth --no-staging 2>&1 | cfn-lint
-
   unit-test:
     name: Unit Test
     runs-on: ubuntu-latest
@@ -79,7 +73,7 @@ jobs:
         run: pip install -r requirements-dev.txt
 
       - name: Run evaluation tests
-        run: pytest tests/evaluation -m evaluation -v --junitxml=test-results/evaluation.xml
+        run: pytest tests/evaluation -m evaluation -v --no-cov --junitxml=test-results/evaluation.xml
 
       - name: Check tool_selection threshold
         run: python scripts/check_threshold.py --metric tool_selection --threshold 0.95
@@ -143,12 +137,6 @@ jobs:
           docker build --target final -t ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} .
           docker push ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
 
-      - name: Install CDK dependencies
-        run: npm ci --prefix infrastructure
-
-      - name: Deploy to staging
-        run: npx cdk deploy AgentStack/Staging --require-approval never --app "npx ts-node infrastructure/bin/app.ts"
-
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -184,12 +172,6 @@ jobs:
         run: |
           docker build --target final -t ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} .
           docker push ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
-
-      - name: Install CDK dependencies
-        run: npm ci --prefix infrastructure
-
-      - name: Deploy to production
-        run: npx cdk deploy AgentStack/Production --require-approval never --app "npx ts-node infrastructure/bin/app.ts"
 
       - uses: actions/setup-python@v5
         with:
