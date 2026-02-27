@@ -1,5 +1,5 @@
 # ── Builder stage ─────────────────────────────────────────────────────────────
-FROM python:3.12-slim AS builder
+FROM python:3.12-slim@sha256:39e4e1ccb01578e3c86f7a0cf7b7fd89b8dbe2c27a88de11cf726ba669469f49 AS builder
 
 WORKDIR /build
 
@@ -11,7 +11,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # ── Final stage ───────────────────────────────────────────────────────────────
-FROM python:3.12-slim AS final
+FROM python:3.12-slim@sha256:39e4e1ccb01578e3c86f7a0cf7b7fd89b8dbe2c27a88de11cf726ba669469f49 AS final
 
 LABEL maintainer="PDE Africa" \
       version="1.0.0" \

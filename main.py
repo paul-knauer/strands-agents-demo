@@ -12,6 +12,7 @@ import sys
 from datetime import date
 
 from age_calculator import create_agent
+from age_calculator.agent import invoke_with_audit
 
 
 def run() -> None:
@@ -35,13 +36,15 @@ def run() -> None:
     try:
         date.fromisoformat(birthdate_raw)
     except ValueError:
+        # SEC-014: truncate echoed user input to prevent reflected content injection
+        safe_input = birthdate_raw[:20]
         print(
-            f"Error: '{birthdate_raw}' is not a valid date. "
+            f"Error: '{safe_input}' is not a valid date. "
             "Please use the format YYYY-MM-DD (e.g. 1990-05-15)."
         )
         sys.exit(1)
 
-    agent(f"My birthdate is {birthdate_raw}. How many days old am I?")
+    invoke_with_audit(agent, f"My birthdate is {birthdate_raw}. How many days old am I?")
 
 
 if __name__ == "__main__":

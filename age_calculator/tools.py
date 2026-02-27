@@ -49,30 +49,48 @@ def calculate_days_between(start_date: str, end_date: str) -> int:
         ValueError: If either date string is not in YYYY-MM-DD format, or
             if start_date is strictly after end_date.
     """
+    # SEC-002: type, length, and range validation before any parsing
+    _MAX_DATE_LEN = 10
+    _MIN_DATE = datetime.date(1900, 1, 1)
+    _MAX_DATE = datetime.date(2100, 12, 31)
+
+    if not isinstance(start_date, str):
+        raise ValueError("start_date must be a string.")
+    if not isinstance(end_date, str):
+        raise ValueError("end_date must be a string.")
+    if len(start_date) > _MAX_DATE_LEN:
+        raise ValueError(f"start_date exceeds maximum length of {_MAX_DATE_LEN}.")
+    if len(end_date) > _MAX_DATE_LEN:
+        raise ValueError(f"end_date exceeds maximum length of {_MAX_DATE_LEN}.")
+
+    # SEC-013: log input lengths, not raw values
     logger.debug(
-        "calculate_days_between called with start_date=%r, end_date=%r",
-        start_date,
-        end_date,
+        "calculate_days_between called with %d-char start_date, %d-char end_date",
+        len(start_date),
+        len(end_date),
     )
 
     try:
         start = datetime.date.fromisoformat(start_date)
     except ValueError as exc:
         raise ValueError(
-            f"start_date {start_date!r} is not a valid ISO date (YYYY-MM-DD)."
+            "start_date is not a valid ISO date (YYYY-MM-DD)."
         ) from exc
 
     try:
         end = datetime.date.fromisoformat(end_date)
     except ValueError as exc:
         raise ValueError(
-            f"end_date {end_date!r} is not a valid ISO date (YYYY-MM-DD)."
+            "end_date is not a valid ISO date (YYYY-MM-DD)."
         ) from exc
 
+    if not (_MIN_DATE <= start <= _MAX_DATE):
+        raise ValueError(f"start_date is outside the allowed range (1900-01-01 to 2100-12-31).")
+    if not (_MIN_DATE <= end <= _MAX_DATE):
+        raise ValueError(f"end_date is outside the allowed range (1900-01-01 to 2100-12-31).")
+
     if start > end:
-        raise ValueError(
-            f"start_date ({start_date}) must not be after end_date ({end_date})."
-        )
+        raise ValueError("start_date must not be after end_date.")
 
     days: int = (end - start).days
     logger.debug("calculate_days_between result: %d days", days)

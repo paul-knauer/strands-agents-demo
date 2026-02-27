@@ -102,12 +102,14 @@ class TestCalculateDaysBetweenOrderingConstraint:
         with pytest.raises(ValueError):
             calculate_days_between("2000-12-31", "2000-12-30")
 
-    def test_error_message_contains_both_dates(self):
+    def test_error_message_does_not_echo_raw_dates(self):
+        # SEC-012: error messages must not reflect raw user input (reflected content injection)
         with pytest.raises(ValueError) as exc_info:
             calculate_days_between("2024-06-15", "2024-06-14")
         msg = str(exc_info.value)
-        assert "2024-06-15" in msg
-        assert "2024-06-14" in msg
+        assert "start_date" in msg
+        assert "2024-06-15" not in msg
+        assert "2024-06-14" not in msg
 
 
 @pytest.mark.unit
