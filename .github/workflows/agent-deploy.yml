@@ -155,20 +155,41 @@ jobs:
           docker build --target final -t ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} .
           echo "image_tag=${{ github.sha }}" >> $GITHUB_OUTPUT
 
-      - name: Scan image with Trivy
+      # Step 1 of 3: generate the SARIF report.
+      # exit-code is intentionally 0 here so Trivy always writes the full
+      # output file before this step exits.  A non-zero exit-code causes
+      # Trivy to terminate early and the output file may be absent or empty,
+      # which is exactly what produces the "Path does not exist" error in the
+      # upload step that follows.
+      - name: Scan image with Trivy (SARIF output)
         uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2  # v0.28.0
         with:
           image-ref: ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
           format: sarif
           output: trivy-results.sarif
           severity: HIGH,CRITICAL
-          exit-code: 1
+          exit-code: 0
 
+      # Step 2 of 3: upload SARIF unconditionally so GitHub Security tab
+      # receives findings regardless of whether the gate below passes or fails.
       - name: Upload Trivy SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@dd746615b3b9d728a6a37ca2045b68ca76d4841a  # v3.28.6
         if: always()
         with:
           sarif_file: trivy-results.sarif
+
+      # Step 3 of 3: enforce the quality gate as a separate scan pass.
+      # This run uses table format (human-readable log) and exit-code 1 so the
+      # job fails visibly when HIGH or CRITICAL CVEs are present.  The SARIF
+      # file has already been uploaded above, so no findings are lost even when
+      # this step fails and skips the push step.
+      - name: Enforce Trivy vulnerability gate
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2  # v0.28.0
+        with:
+          image-ref: ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: 1
 
       - name: Push scanned image to ECR
         run: docker push ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
