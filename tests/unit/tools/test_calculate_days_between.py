@@ -198,13 +198,36 @@ class TestCalculateDaysBetweenBoundaryValues:
         """9999-12-31 is the maximum ISO date; same start/end returns 0."""
         assert calculate_days_between("9999-12-31", "9999-12-31") == 0
 
-    def test_first_day_of_year_to_last_non_leap(self):
+    def test_first_day_of_year_to_last_non_leap(self, non_leap_year_date):
         """2023 has 365 days."""
         assert calculate_days_between("2023-01-01", "2023-12-31") == 364
 
-    def test_first_day_of_year_to_last_leap(self):
+    def test_first_day_of_year_to_last_leap(self, leap_year_date):
         """2024 has 366 days."""
         assert calculate_days_between("2024-01-01", "2024-12-31") == 365
+
+    def test_start_date_before_1900_raises(self):
+        """1899-12-31 is below the _MIN_DATE floor — SEC-002 range guard must fire."""
+        with pytest.raises(ValueError, match="allowed range"):
+            calculate_days_between("1899-12-31", "2024-01-01")
+
+    def test_end_date_before_1900_raises(self):
+        """An end_date earlier than 1900-01-01 must also be rejected."""
+        with pytest.raises(ValueError, match="allowed range"):
+            calculate_days_between("1890-01-01", "1899-12-31")
+
+
+@pytest.mark.unit
+class TestCalculateDaysBetweenTypeGuards:
+    """SEC-002: non-string inputs must be rejected before any parsing."""
+
+    def test_non_string_start_date_raises_value_error(self):
+        with pytest.raises(ValueError, match="start_date must be a string"):
+            calculate_days_between(19900101, "2024-01-01")  # type: ignore[arg-type]
+
+    def test_non_string_end_date_raises_value_error(self):
+        with pytest.raises(ValueError, match="end_date must be a string"):
+            calculate_days_between("1990-01-01", None)  # type: ignore[arg-type]
 
 
 @pytest.mark.unit

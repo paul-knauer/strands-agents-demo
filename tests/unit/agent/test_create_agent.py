@@ -1,6 +1,8 @@
-"""Unit tests for age_calculator.agent.create_agent."""
+"""Unit tests for age_calculator.agent.create_agent and invoke_with_audit."""
 
+import json
 import logging
+import uuid
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -85,3 +87,93 @@ class TestAgentModuleConstants:
         from age_calculator.agent import create_agent
         hints = create_agent.__annotations__
         assert "return" in hints, "create_agent must declare a return type annotation."
+
+    def test_audit_logger_is_named_audit(self):
+        """audit_logger must use the exact name 'audit' for CloudWatch log routing."""
+        import age_calculator.agent as agent_module
+        assert agent_module.audit_logger.name == "audit"
+
+
+@pytest.mark.unit
+class TestInvokeWithAudit:
+    """Unit tests for invoke_with_audit covering audit record contents and error path."""
+
+    def _make_agent(self, return_value="agent response"):
+        mock_agent = MagicMock(return_value=return_value)
+        return mock_agent
+
+    def test_happy_path_returns_agent_response(self):
+        from age_calculator.agent import invoke_with_audit
+        agent = self._make_agent("the answer")
+        result = invoke_with_audit(agent, "some input")
+        assert result == "the answer"
+
+    def test_happy_path_emits_success_status(self):
+        from age_calculator.agent import invoke_with_audit
+        agent = self._make_agent()
+        with patch("age_calculator.agent.audit_logger") as mock_audit:
+            invoke_with_audit(agent, "some input")
+        record = json.loads(mock_audit.info.call_args[0][0])
+        assert record["status"] == "success"
+
+    def test_exception_path_emits_error_status(self):
+        from age_calculator.agent import invoke_with_audit
+        agent = MagicMock(side_effect=RuntimeError("boom"))
+        with patch("age_calculator.agent.audit_logger") as mock_audit:
+            with pytest.raises(RuntimeError):
+                invoke_with_audit(agent, "some input")
+        record = json.loads(mock_audit.info.call_args[0][0])
+        assert record["status"] == "error"
+
+    def test_exception_is_reraised(self):
+        from age_calculator.agent import invoke_with_audit
+        agent = MagicMock(side_effect=ValueError("bad input"))
+        with patch("age_calculator.agent.audit_logger"):
+            with pytest.raises(ValueError, match="bad input"):
+                invoke_with_audit(agent, "some input")
+
+    def test_caller_supplied_session_id_in_audit_record(self):
+        from age_calculator.agent import invoke_with_audit
+        agent = self._make_agent()
+        sid = "my-session-42"
+        with patch("age_calculator.agent.audit_logger") as mock_audit:
+            invoke_with_audit(agent, "some input", session_id=sid)
+        record = json.loads(mock_audit.info.call_args[0][0])
+        assert record["session_id"] == sid
+
+    def test_auto_generated_session_id_is_valid_uuid(self):
+        from age_calculator.agent import invoke_with_audit
+        agent = self._make_agent()
+        with patch("age_calculator.agent.audit_logger") as mock_audit:
+            invoke_with_audit(agent, "some input")
+        record = json.loads(mock_audit.info.call_args[0][0])
+        # Must not raise — validates it is a well-formed UUID
+        uuid.UUID(record["session_id"])
+
+    def test_arn_is_masked_in_audit_record(self):
+        from age_calculator.agent import invoke_with_audit
+        agent = self._make_agent()
+        with patch("age_calculator.agent.audit_logger") as mock_audit:
+            invoke_with_audit(agent, "some input")
+        record = json.loads(mock_audit.info.call_args[0][0])
+        import re
+        assert not re.search(r":\d{12}:", record["model_id"]), (
+            "model_id in audit record must not contain a 12-digit AWS account number"
+        )
+
+    def test_latency_is_non_negative(self):
+        from age_calculator.agent import invoke_with_audit
+        agent = self._make_agent()
+        with patch("age_calculator.agent.audit_logger") as mock_audit:
+            invoke_with_audit(agent, "some input")
+        record = json.loads(mock_audit.info.call_args[0][0])
+        assert record["response_latency_ms"] >= 0
+
+    def test_audit_record_contains_timestamp(self):
+        from age_calculator.agent import invoke_with_audit
+        agent = self._make_agent()
+        with patch("age_calculator.agent.audit_logger") as mock_audit:
+            invoke_with_audit(agent, "some input")
+        record = json.loads(mock_audit.info.call_args[0][0])
+        assert "timestamp" in record
+        assert record["timestamp"]

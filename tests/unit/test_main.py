@@ -32,6 +32,17 @@ class TestRunValidInput:
             main.run()
         patched_run.assert_called_once()
 
+    def test_invoke_with_audit_is_called(self, mock_agent):
+        """run() must route agent calls through invoke_with_audit, not directly."""
+        with patch("main.create_agent", return_value=mock_agent), \
+             patch("main.invoke_with_audit") as mock_invoke, \
+             patch("builtins.input", return_value="1990-05-15"):
+            import main
+            main.run()
+        mock_invoke.assert_called_once()
+        call_args = mock_invoke.call_args
+        assert call_args[0][0] is mock_agent
+
     def test_valid_date_passes_birthdate_in_prompt(self, patched_run):
         with patch("builtins.input", return_value="2000-01-01"):
             import main
