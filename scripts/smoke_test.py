@@ -1,9 +1,20 @@
-"""Smoke test for the deployed age_calculator agent package.
+"""Smoke test for the deployed age_calculator agent on AWS AgentCore.
 
-This script verifies that the agent package is importable and correctly
-structured without making any live AWS / Bedrock API calls.  It is designed
-to run in CI after a Docker image is built and in a deployment environment
-after the container starts.
+This script runs two tiers of checks:
+
+1. **Static checks** — verifies the agent package is importable and correctly
+   structured.  These run unconditionally and require no AWS credentials.
+
+2. **Live endpoint check** — invokes the live AgentCore agent runtime and
+   asserts that the response is non-empty, contains the word "days", and
+   contains at least one numeric character.  This check requires:
+   - AWS credentials with ``bedrock-agentcore:InvokeAgentRuntime`` permission.
+   - The ``AGENT_ID_STAGING`` or ``AGENT_ID_PRODUCTION`` environment variable
+     (or the generic ``AGENT_ID`` fallback) set to the target AgentCore runtime
+     ID for the chosen environment.
+
+   The live check is skipped (with a warning) when no agent ID is available so
+   that the static checks can still be used in environments without AWS access.
 
 Usage
 -----
@@ -12,14 +23,16 @@ Usage
 
 Exit codes
 ----------
-0   All checks passed.
+0   All checks passed (or live check was skipped due to missing agent ID).
 1   One or more checks failed.  A summary is printed to stdout.
 """
 
 import argparse
 import datetime
 import importlib
+import os
 import sys
+import time
 import traceback
 from pathlib import Path
 from typing import Any, Callable
@@ -32,6 +45,13 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 VALID_ENVIRONMENTS: frozenset[str] = frozenset({"staging", "production"})
+
+# Maximum number of attempts for the live invocation (handles cold-start latency).
+_LIVE_MAX_ATTEMPTS = 3
+_LIVE_RETRY_DELAY_SECONDS = 5
+
+# Prompt used for the live invocation smoke check.
+_LIVE_PROMPT = "How many days old is someone born on 1990-01-01?"
 
 
 # ---------------------------------------------------------------------------
@@ -80,7 +100,7 @@ def _run_check(name: str, fn: Callable[[], Any]) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Individual checks
+# Static checks
 # ---------------------------------------------------------------------------
 
 def check_package_importable() -> None:
@@ -118,15 +138,11 @@ def check_get_current_date_returns_iso_date() -> None:
     """Call get_current_date() and verify it returns a valid ISO date string."""
     from age_calculator.tools import get_current_date  # type: ignore[attr-defined]
 
-    # The @tool decorator wraps the function; call the underlying callable.
-    # Strands tool objects expose the underlying function via __call__.
     result = get_current_date()
     assert isinstance(result, str), (
         f"get_current_date() returned {type(result).__name__}, expected str"
     )
-    # Validate it is a parseable ISO date in YYYY-MM-DD format.
     parsed = datetime.date.fromisoformat(result)
-    # Sanity check: the date must be plausible (year >= 2020).
     assert parsed.year >= 2020, (
         f"get_current_date() returned an unexpectedly old date: {result}"
     )
@@ -155,6 +171,115 @@ def check_system_prompt_keywords() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Live endpoint check
+# ---------------------------------------------------------------------------
+
+def _get_agent_id(environment: str) -> str | None:
+    """Resolve the AgentCore runtime ID for the given environment.
+
+    Checks (in order):
+    1. ``AGENT_ID_<ENVIRONMENT>`` (e.g. ``AGENT_ID_STAGING``)
+    2. ``AGENT_ID`` generic fallback
+
+    Args:
+        environment: The target environment label (``staging`` or ``production``).
+
+    Returns:
+        The agent runtime ID string, or ``None`` if not set.
+    """
+    env_specific = f"AGENT_ID_{environment.upper()}"
+    return os.environ.get(env_specific) or os.environ.get("AGENT_ID") or None
+
+
+def _invoke_agent_runtime(agent_id: str, region: str, prompt: str) -> str:
+    """Invoke an AgentCore runtime and return the response text.
+
+    Args:
+        agent_id: The AgentCore runtime ID.
+        region: AWS region.
+        prompt: User prompt to send.
+
+    Returns:
+        The response content as a plain string.
+
+    Raises:
+        RuntimeError: If the invocation fails or returns an empty response.
+    """
+    import boto3  # type: ignore[import-untyped]
+    from botocore.exceptions import BotoCoreError, ClientError  # type: ignore[import-untyped]
+
+    client = boto3.client("bedrock-agentcore", region_name=region)
+    try:
+        response = client.invoke_agent_runtime(
+            agentRuntimeId=agent_id,
+            payload={"inputText": prompt},
+        )
+    except (BotoCoreError, ClientError) as exc:
+        raise RuntimeError(f"AgentCore invocation failed: {exc}") from exc
+
+    # The response payload is a streaming body; read it fully.
+    body = response.get("body") or response.get("outputText") or ""
+    if hasattr(body, "read"):
+        body = body.read().decode("utf-8")
+
+    if not body:
+        raise RuntimeError("AgentCore returned an empty response body.")
+
+    return body
+
+
+def run_live_endpoint_check(environment: str) -> None:
+    """Invoke the live AgentCore endpoint and validate the response.
+
+    Retries up to ``_LIVE_MAX_ATTEMPTS`` times with a delay to handle
+    cold-start latency before recording a failure.
+
+    Args:
+        environment: Target environment label (``staging`` or ``production``).
+    """
+    agent_id = _get_agent_id(environment)
+    if not agent_id:
+        env_var = f"AGENT_ID_{environment.upper()}"
+        print(
+            f"\n  [SKIP] Live endpoint check: neither {env_var!r} nor AGENT_ID "
+            "is set.  Set the environment variable to enable this check."
+        )
+        return
+
+    region = os.environ.get("AWS_REGION", "us-east-1")
+    check_name = f"Live AgentCore invocation ({environment})"
+
+    last_error: str = ""
+    for attempt in range(1, _LIVE_MAX_ATTEMPTS + 1):
+        try:
+            response_text = _invoke_agent_runtime(agent_id, region, _LIVE_PROMPT)
+
+            # Validate response content.
+            assert response_text.strip(), "Response is blank."
+            lower = response_text.lower()
+            assert "days" in lower, (
+                f"Response does not contain the word 'days'. Got: {response_text!r}"
+            )
+            assert any(ch.isdigit() for ch in response_text), (
+                f"Response contains no numeric characters. Got: {response_text!r}"
+            )
+
+            _record(check_name, True)
+            return
+
+        except Exception:  # noqa: BLE001
+            last_error = traceback.format_exc().strip().splitlines()[-1]
+            if attempt < _LIVE_MAX_ATTEMPTS:
+                print(
+                    f"  [RETRY] Live check attempt {attempt}/{_LIVE_MAX_ATTEMPTS} failed "
+                    f"({last_error}). Retrying in {_LIVE_RETRY_DELAY_SECONDS}s..."
+                )
+                time.sleep(_LIVE_RETRY_DELAY_SECONDS)
+
+    _record(check_name, False, f"All {_LIVE_MAX_ATTEMPTS} attempts failed. Last error: {last_error}")
+
+
+# ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
 
@@ -165,7 +290,7 @@ def _parse_args() -> argparse.Namespace:
         Parsed namespace with ``environment`` (str).
     """
     parser = argparse.ArgumentParser(
-        description="Smoke test the age_calculator agent package.",
+        description="Smoke test the age_calculator agent on AWS AgentCore.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
@@ -189,7 +314,7 @@ def main() -> None:
 
     print(f"\n[smoke_test] Running smoke tests against environment: {environment}\n")
 
-    checks: list[tuple[str, Callable[[], Any]]] = [
+    static_checks: list[tuple[str, Callable[[], Any]]] = [
         ("Import age_calculator package", check_package_importable),
         ("Import create_agent from age_calculator", check_create_agent_importable),
         ("create_agent is callable", check_create_agent_is_callable),
@@ -202,8 +327,11 @@ def main() -> None:
         ("SYSTEM_PROMPT contains expected keywords", check_system_prompt_keywords),
     ]
 
-    for name, fn in checks:
+    for name, fn in static_checks:
         _run_check(name, fn)
+
+    # Live endpoint check — requires AWS credentials and AGENT_ID_* env var.
+    run_live_endpoint_check(environment)
 
     total = len(_results)
     passed = sum(1 for _, ok, _ in _results if ok)

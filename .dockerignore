@@ -17,5 +17,6 @@ test-results/
 .claude/
 .cursor/
 pyproject.toml
+cdk.out/
 *.md
 !README.md

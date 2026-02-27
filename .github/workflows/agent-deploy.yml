@@ -34,6 +34,15 @@ jobs:
       - name: Type-check with mypy
         run: mypy age_calculator/ --strict
 
+      - name: Install CDK dependencies
+        run: npm ci --prefix infrastructure
+
+      - name: Synthesise CDK template and lint with cfn-lint
+        run: |
+          npx cdk synth --app "npx ts-node infrastructure/bin/app.ts" --quiet
+          pip install cfn-lint --quiet
+          cfn-lint cdk.out/*.template.json
+
   unit-test:
     name: Unit Test
     runs-on: ubuntu-latest
@@ -121,9 +130,17 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
+      # NOTE: The build image is pushed to the staging ECR registry.
+      # In a single-account topology this works without change.  In a
+      # split-account topology (separate staging and production AWS accounts)
+      # the production deploy job must pull from a shared artefact registry
+      # rather than the staging-account ECR.  Add a dedicated
+      # AWS_BUILD_ROLE_ARN secret pointing at a shared build account and
+      # update the role-to-assume value below accordingly.
       - name: Configure AWS credentials (build)
         uses: aws-actions/configure-aws-credentials@5579c002bb4778aa43395ef1df492868a9a1c83f  # v4.0.2
         with:
@@ -147,6 +164,12 @@ jobs:
           output: trivy-results.sarif
           severity: HIGH,CRITICAL
           exit-code: 1
+
+      - name: Upload Trivy SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@dd746615b3b9d728a6a37ca2045b68ca76d4841a  # v3.28.6
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
 
       - name: Push scanned image to ECR
         run: docker push ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
@@ -183,7 +206,10 @@ jobs:
         run: npm ci --prefix infrastructure
 
       - name: Deploy to staging
-        run: npx cdk deploy AgentStack/Staging --require-approval broadening --app "npx ts-node infrastructure/bin/app.ts"
+        env:
+          IMAGE_TAG: ${{ needs.build-and-scan.outputs.image_tag }}
+          MODEL_ARN: ${{ secrets.MODEL_ARN }}
+        run: npx cdk deploy AgentStack/Staging --require-approval never --app "npx ts-node infrastructure/bin/app.ts"
 
       - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
         with:
@@ -198,7 +224,7 @@ jobs:
   deploy-production:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: deploy-staging
+    needs: [build-and-scan, deploy-staging]
     if: github.ref == 'refs/heads/main'
     environment: production
     permissions:
@@ -228,7 +254,10 @@ jobs:
         run: npm ci --prefix infrastructure
 
       - name: Deploy to production
-        run: npx cdk deploy AgentStack/Production --require-approval broadening --app "npx ts-node infrastructure/bin/app.ts"
+        env:
+          IMAGE_TAG: ${{ needs.build-and-scan.outputs.image_tag }}
+          MODEL_ARN: ${{ secrets.MODEL_ARN }}
+        run: npx cdk deploy AgentStack/Production --require-approval never --app "npx ts-node infrastructure/bin/app.ts"
 
       - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
         with:

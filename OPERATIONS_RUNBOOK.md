@@ -218,13 +218,17 @@ If errors are infrastructure-related (not caused by a deployment):
 
 ## 4. Running Smoke Tests Manually
 
-The smoke test script (`scripts/smoke_test.py`) invokes the live AgentCore agent endpoint and asserts that the response is non-empty, contains the word "days", and contains at least one numeric character.
+The smoke test script (`scripts/smoke_test.py`) runs two tiers of checks:
+
+1. **Static checks** — verifies the agent package is importable and that core logic (tool functions, system prompt) is correct. These run without AWS credentials.
+
+2. **Live endpoint check** — invokes the live AgentCore runtime with the prompt _"How many days old is someone born on 1990-01-01?"_ and asserts the response is non-empty, contains the word "days", and contains at least one numeric character. Retries up to three times with a five-second delay to handle cold-start latency. This check requires AWS credentials and an agent ID environment variable; it is skipped (with a warning) when neither is set.
 
 ### Prerequisites
 
 - Python dependencies installed: `pip install -r requirements-dev.txt`
 - AWS credentials available with `bedrock-agentcore:InvokeAgentRuntime` permission.
-- The `AGENT_ID` environment variable set to the target environment's AgentCore runtime ID (or the environment-specific variant: `AGENT_ID_STAGING` or `AGENT_ID_PRODUCTION`).
+- The `AGENT_ID_STAGING` or `AGENT_ID_PRODUCTION` environment variable set to the target environment's AgentCore runtime ID (or the generic `AGENT_ID` fallback).
 
 ### Staging
 
@@ -244,7 +248,7 @@ export AWS_REGION=us-east-1
 python scripts/smoke_test.py --environment production
 ```
 
-The script retries up to three times with a five-second delay to handle cold-start latency. It exits `0` on pass and `1` on any failure, printing a clear PASS or FAIL message.
+The script exits `0` when all checks pass (or when the live check is skipped due to a missing agent ID) and `1` on any failure, printing a clear PASS/FAIL/SKIP status for each check.
 
 ---
 
