@@ -58,10 +58,34 @@ jobs:
           name: unit-test-results
           path: test-results/unit.xml
 
+  integration-test:
+    name: Integration Test
+    runs-on: ubuntu-latest
+    needs: unit-test
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Python dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run integration tests
+        run: pytest tests/integration/ -m integration -v --junitxml=test-results/integration.xml
+
+      - name: Upload integration test results
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
+        if: always()
+        with:
+          name: integration-test-results
+          path: test-results/integration.xml
+
   evaluate:
     name: Evaluate
     runs-on: ubuntu-latest
-    needs: unit-test
+    needs: integration-test
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
@@ -94,23 +118,38 @@ jobs:
     needs: evaluate
     outputs:
       image_tag: ${{ steps.build.outputs.image_tag }}
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Configure AWS credentials (build)
+        uses: aws-actions/configure-aws-credentials@5579c002bb4778aa43395ef1df492868a9a1c83f  # v4.0.2
+        with:
+          role-to-assume: ${{ secrets.AWS_STAGING_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@4625ce35226a7557230889aae2f52eb50ec3dcda  # v2.0.1
 
       - name: Build Docker image
         id: build
         run: |
-          docker build --target final -t ${{ env.ECR_REPOSITORY }}:${{ github.sha }} .
+          docker build --target final -t ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} .
           echo "image_tag=${{ github.sha }}" >> $GITHUB_OUTPUT
 
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2  # v0.28.0
         with:
-          image-ref: ${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          image-ref: ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
           format: sarif
           output: trivy-results.sarif
           severity: HIGH,CRITICAL
           exit-code: 1
+
+      - name: Push scanned image to ECR
+        run: docker push ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
 
   deploy-staging:
     name: Deploy to Staging
@@ -132,10 +171,13 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@4625ce35226a7557230889aae2f52eb50ec3dcda  # v2.0.1
 
-      - name: Build and push Docker image to ECR
+      - name: Pull scanned image and re-tag for staging
         run: |
-          docker build --target final -t ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} .
-          docker push ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          docker pull ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          docker tag \
+            ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} \
+            ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}-staging:${{ github.sha }}
+          docker push ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}-staging:${{ github.sha }}
 
       - name: Install CDK dependencies
         run: npm ci --prefix infrastructure
@@ -174,10 +216,13 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@4625ce35226a7557230889aae2f52eb50ec3dcda  # v2.0.1
 
-      - name: Build and push Docker image to ECR
+      - name: Pull scanned image and re-tag for production
         run: |
-          docker build --target final -t ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} .
-          docker push ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          docker pull ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          docker tag \
+            ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} \
+            ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}-production:${{ github.sha }}
+          docker push ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}-production:${{ github.sha }}
 
       - name: Install CDK dependencies
         run: npm ci --prefix infrastructure
