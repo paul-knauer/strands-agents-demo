@@ -27,6 +27,14 @@ const env: cdk.Environment = {
 // Locally it falls back to "latest" so `cdk synth` still runs cleanly.
 const imageTag = process.env.IMAGE_TAG ?? 'latest';
 
+// The MODEL_ARN is the full Bedrock foundation model ARN scoped into the
+// BedrockInvoke IAM policy.  In CI the pipeline sets this via the environment.
+// The fallback value is the pinned Claude 3.7 Sonnet model used by this
+// project so that local `cdk synth` runs still produce a valid template.
+const modelArn =
+  process.env.MODEL_ARN ??
+  'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-7-sonnet-20250219-v1:0';
+
 // ---------------------------------------------------------------------------
 // Staging stack
 // ---------------------------------------------------------------------------
@@ -34,6 +42,7 @@ new AgentStack(app, 'AgentStack/Staging', {
   env,
   environment: 'staging',
   imageTag,
+  modelArn,
   description: 'nCino Banking Agent — AgentCore supporting infrastructure (staging)',
 });
 
@@ -44,6 +53,7 @@ new AgentStack(app, 'AgentStack/Production', {
   env,
   environment: 'production',
   imageTag,
+  modelArn,
   description: 'nCino Banking Agent — AgentCore supporting infrastructure (production)',
 });
 
