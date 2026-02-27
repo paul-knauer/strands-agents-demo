@@ -1,5 +1,5 @@
 # ── Builder stage ─────────────────────────────────────────────────────────────
-FROM python:3.12-slim AS builder
+FROM python:3.12.9-slim AS builder
 
 WORKDIR /build
 
@@ -11,7 +11,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # ── Final stage ───────────────────────────────────────────────────────────────
-FROM python:3.12-slim AS final
+FROM python:3.12.9-slim AS final
 
 LABEL maintainer="PDE Africa" \
       version="1.0.0" \
@@ -37,6 +37,6 @@ USER agentuser
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import age_calculator; print('ok')" || exit 1
+    CMD python -c "from age_calculator.tools import get_current_date, calculate_days_between; assert get_current_date(); assert calculate_days_between('1990-01-01', '2000-01-01') == 3652; print('ok')" || exit 1
 
 ENTRYPOINT ["python", "main.py"]
