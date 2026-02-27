@@ -33,7 +33,7 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: ncino-banking-agent
+  ECR_REPOSITORY: age-calculator-agent
   PYTHON_VERSION: "3.12"
 
 jobs:
@@ -175,7 +175,7 @@ export class AgentStack extends cdk.Stack {
 
     // ECR — immutable tags, scan on push, lifecycle policy
     new ecr.Repository(this, 'AgentRepository', {
-      repositoryName: `ncino-banking-agent-${environment}`,
+      repositoryName: `age-calculator-agent-${environment}`,
       imageTagMutability: ecr.TagMutability.IMMUTABLE,
       imageScanOnPush: true,
       lifecycleRules: [

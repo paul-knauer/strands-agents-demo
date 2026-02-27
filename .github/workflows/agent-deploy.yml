@@ -11,7 +11,7 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: ncino-banking-agent
+  ECR_REPOSITORY: age-calculator-agent
   PYTHON_VERSION: "3.12"
 
 jobs:

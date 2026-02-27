@@ -106,7 +106,7 @@ The deployment role needs:
     "ecr:UploadLayerPart",
     "ecr:CompleteLayerUpload"
   ],
-  "Resource": "arn:aws:ecr:us-east-1:ACCOUNT_ID:repository/ncino-banking-agent"
+  "Resource": "arn:aws:ecr:us-east-1:ACCOUNT_ID:repository/age-calculator-agent"
 }
 ```
 

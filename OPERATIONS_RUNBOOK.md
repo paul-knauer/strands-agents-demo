@@ -72,7 +72,7 @@ Only runs on pushes to `main`. Requires the `production` GitHub Actions environm
 
 Trigger a rollback when any of the following occur after a production deploy:
 
-- The `ncino-banking-agent-production-error-count` CloudWatch alarm fires.
+- The `age-calculator-agent-production-error-count` CloudWatch alarm fires.
 - Smoke test passes in CI but live user traffic returns errors or incorrect responses.
 - A critical CVE is discovered in the deployed image after it was promoted.
 - A model version update introduces a regression in tool selection or refusal accuracy.
@@ -144,7 +144,7 @@ The AgentCore runtime ID and alias ID are also stored in SSM Parameter Store und
 
 ### Step 1 — Alarm Fires
 
-The `ncino-banking-agent-production-error-count` CloudWatch alarm publishes to the SNS topic `agentcore-alerts-production`. Subscribers (PagerDuty / email) receive a notification.
+The `age-calculator-agent-production-error-count` CloudWatch alarm publishes to the SNS topic `agentcore-alerts-production`. Subscribers (PagerDuty / email) receive a notification.
 
 Actions:
 - [ ] Acknowledge the alert in PagerDuty to prevent escalation while you investigate.
@@ -156,7 +156,7 @@ Actions:
 
 ```bash
 aws logs filter-log-events \
-    --log-group-name /aws/agentcore/ncino-banking-agent/production \
+    --log-group-name /aws/agentcore/age-calculator-agent/production \
     --start-time $(date -d '-30 minutes' +%s000) \
     --filter-pattern "ERROR" \
     --output text
@@ -259,7 +259,7 @@ The script exits `0` when all checks pass (or when the live check is skipped due
 | Variable          | Value                  | Description                                      |
 |-------------------|------------------------|--------------------------------------------------|
 | `AWS_REGION`      | `us-east-1`            | AWS region for all deployments                   |
-| `ECR_REPOSITORY`  | `ncino-banking-agent`  | Base ECR repository name (environment appended)  |
+| `ECR_REPOSITORY`  | `age-calculator-agent` | Base ECR repository name (environment appended)  |
 | `PYTHON_VERSION`  | `3.12`                 | Python version used in all CI jobs               |
 
 ### GitHub Actions Secrets

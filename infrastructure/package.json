@@ -1,7 +1,7 @@
 {
-  "name": "ncino-banking-agent-infrastructure",
+  "name": "age-calculator-agent-infrastructure",
   "version": "1.0.0",
-  "description": "AWS CDK infrastructure for the nCino Banking Agent on AgentCore",
+  "description": "AWS CDK infrastructure for the Age Calculator Agent on AgentCore",
   "private": true,
   "scripts": {
     "build": "tsc",
