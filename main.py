@@ -11,6 +11,7 @@ import datetime
 import json
 import logging
 import os
+import re
 import sys
 
 from age_calculator import create_agent
@@ -84,7 +85,18 @@ def run() -> None:
         )
         sys.exit(1)
 
-    invoke_with_audit(agent, f"My birthdate is {birthdate_raw}. How many days old am I?")
+    # SEC-003: defense-in-depth sanitization — enforce strict ISO date format
+    # with a regex allowlist after the fromisoformat check above.  Strip any
+    # surrounding whitespace and reject anything that does not match exactly
+    # YYYY-MM-DD so that no extraneous characters can reach the agent prompt.
+    birthdate_sanitised = birthdate_raw.strip()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", birthdate_sanitised):
+        print(
+            "Error: birthdate must be in the format YYYY-MM-DD (e.g. 1990-05-15)."
+        )
+        sys.exit(1)
+
+    invoke_with_audit(agent, f"My birthdate is {birthdate_sanitised}. How many days old am I?")
 
 
 if __name__ == "__main__":
