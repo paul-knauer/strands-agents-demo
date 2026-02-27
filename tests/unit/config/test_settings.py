@@ -1,6 +1,7 @@
 """Unit tests for age_calculator.config.Settings."""
 
 import importlib
+
 import pytest
 from pydantic import ValidationError
 
@@ -11,13 +12,14 @@ class TestSettings:
         monkeypatch.setenv("MODEL_ARN", "arn:aws:bedrock:us-east-1::foundation-model/my-model")
         import age_calculator.config as cfg_module
         importlib.reload(cfg_module)
-        assert cfg_module.Settings().model_arn == "arn:aws:bedrock:us-east-1::foundation-model/my-model"
+        expected_arn = "arn:aws:bedrock:us-east-1::foundation-model/my-model"
+        assert cfg_module.Settings().model_arn == expected_arn
 
     def test_raises_when_model_arn_absent(self, monkeypatch):
         monkeypatch.delenv("MODEL_ARN", raising=False)
         # Also remove any .env influence by pointing at a non-existent file
-        from pydantic_settings import BaseSettings, SettingsConfigDict
         from pydantic import Field
+        from pydantic_settings import BaseSettings, SettingsConfigDict
 
         class IsolatedSettings(BaseSettings):
             model_config = SettingsConfigDict(env_file=".nonexistent", case_sensitive=False)
@@ -62,11 +64,12 @@ class TestSettings:
     def test_settings_rejects_extra_fields(self, monkeypatch):
         """Settings must not silently absorb undeclared fields (extra='forbid' behaviour)."""
         monkeypatch.setenv("MODEL_ARN", "arn:aws:bedrock:us-east-1::foundation-model/test")
-        from pydantic import ValidationError
         import age_calculator.config as cfg_module
         importlib.reload(cfg_module)
+        from pydantic import ValidationError
+        test_arn = "arn:aws:bedrock:us-east-1::foundation-model/test"
         with pytest.raises((ValidationError, TypeError)):
-            cfg_module.Settings(model_arn="arn:aws:bedrock:us-east-1::foundation-model/test", unexpected="bad")
+            cfg_module.Settings(model_arn=test_arn, unexpected="bad")  # type: ignore[call-arg]
 
     def test_env_file_encoding_is_utf8(self):
         """model_config must specify UTF-8 so non-ASCII ARN characters are handled correctly."""

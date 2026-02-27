@@ -12,8 +12,6 @@ import json
 import logging
 import os
 import sys
-import time
-import uuid
 
 from age_calculator import create_agent
 from age_calculator.agent import invoke_with_audit
@@ -32,7 +30,7 @@ def _configure_logging() -> None:
     if log_format == "json":
         class _JsonFormatter(logging.Formatter):
             def format(self, record: logging.LogRecord) -> str:
-                payload: dict = {
+                payload: dict[str, object] = {
                     "timestamp": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
                     "level": record.levelname,
                     "logger": record.name,

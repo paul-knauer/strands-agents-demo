@@ -4,9 +4,9 @@ import json
 import logging
 import pathlib
 import runpy
-import sys
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 # Resolve main.py relative to this file's repo root (tests/ -> project root).
 _MAIN_PATH = str(pathlib.Path(__file__).parent.parent.parent / "main.py")

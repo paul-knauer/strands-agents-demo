@@ -16,10 +16,11 @@ evaluation pipeline where you care about the population score, not whether
 each individual test passes.
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
 
-from tests.evaluation.ground_truth import GROUND_TRUTH, AgentTestCase
+import pytest
+
+from tests.evaluation.ground_truth import GROUND_TRUTH
 
 # Cases where tool selection is meaningful (not refusals)
 TOOL_CASES = [c for c in GROUND_TRUTH if c.expected_tool is not None and not c.should_refuse]
@@ -133,7 +134,8 @@ class TestParameterExtractionGroundTruth:
             if case.expected_parameters:
                 keys = set(case.expected_parameters.keys())
                 assert keys <= {"start_date", "end_date"}, (
-                    f"{case.case_id}: unexpected parameter keys {keys - {'start_date', 'end_date'}}."
+                    f"{case.case_id}: unexpected parameter keys"
+                    f" {keys - {'start_date', 'end_date'}}."
                 )
 
     def test_get_current_date_cases_have_no_parameters(self) -> None:

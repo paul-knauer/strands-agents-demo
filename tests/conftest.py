@@ -8,9 +8,9 @@ No AWS credentials are required — the ``agent_runner`` fixture patches
 """
 
 import os
+from unittest.mock import MagicMock, patch
 
 import pytest
-from unittest.mock import MagicMock, patch
 
 # ---------------------------------------------------------------------------
 # Ensure MODEL_ARN is set before any test module is collected.

@@ -47,7 +47,8 @@ def _parse_results(results_path: Path) -> list[dict]:
     if not results_path.exists():
         print(
             f"ERROR: {results_path} not found.\n"
-            "Run 'pytest tests/evaluation -m evaluation --junitxml=test-results/evaluation.xml' first.",
+            "Run 'pytest tests/evaluation -m evaluation"
+            " --junitxml=test-results/evaluation.xml' first.",
             file=sys.stderr,
         )
         sys.exit(1)

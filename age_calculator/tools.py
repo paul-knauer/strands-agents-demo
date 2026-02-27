@@ -46,13 +46,14 @@ def calculate_days_between(start_date: str, end_date: str) -> int:
         non-negative integer.
 
     Raises:
-        ValueError: If either date string is not in YYYY-MM-DD format, or
+        ValueError: If either date string is not in YYYY-MM-DD format, if
+            either date is outside the range 1900-01-01 to 9999-12-31, or
             if start_date is strictly after end_date.
     """
     # SEC-002: type, length, and range validation before any parsing
     _MAX_DATE_LEN = 10
     _MIN_DATE = datetime.date(1900, 1, 1)
-    _MAX_DATE = datetime.date(2100, 12, 31)
+    _MAX_DATE = datetime.date(9999, 12, 31)
 
     if not isinstance(start_date, str):
         raise ValueError("start_date must be a string.")
@@ -85,9 +86,9 @@ def calculate_days_between(start_date: str, end_date: str) -> int:
         ) from exc
 
     if not (_MIN_DATE <= start <= _MAX_DATE):
-        raise ValueError(f"start_date is outside the allowed range (1900-01-01 to 2100-12-31).")
+        raise ValueError("start_date is outside the allowed range (1900-01-01 to 9999-12-31).")
     if not (_MIN_DATE <= end <= _MAX_DATE):
-        raise ValueError(f"end_date is outside the allowed range (1900-01-01 to 2100-12-31).")
+        raise ValueError("end_date is outside the allowed range (1900-01-01 to 9999-12-31).")
 
     if start > end:
         raise ValueError("start_date must not be after end_date.")

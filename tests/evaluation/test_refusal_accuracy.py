@@ -19,8 +19,9 @@ cannot assert without live inference), this evaluation layer tests:
      to date arithmetic tasks.
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from tests.evaluation.ground_truth import GROUND_TRUTH
 

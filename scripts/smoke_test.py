@@ -34,8 +34,9 @@ import os
 import sys
 import time
 import traceback
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 # Ensure the project root is on sys.path so age_calculator is importable when
 # the script is run directly (e.g. locally or in a Docker container that uses
@@ -276,7 +277,11 @@ def run_live_endpoint_check(environment: str) -> None:
                 )
                 time.sleep(_LIVE_RETRY_DELAY_SECONDS)
 
-    _record(check_name, False, f"All {_LIVE_MAX_ATTEMPTS} attempts failed. Last error: {last_error}")
+    _record(
+        check_name,
+        False,
+        f"All {_LIVE_MAX_ATTEMPTS} attempts failed. Last error: {last_error}",
+    )
 
 
 # ---------------------------------------------------------------------------

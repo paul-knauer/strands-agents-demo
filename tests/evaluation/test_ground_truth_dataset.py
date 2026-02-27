@@ -7,7 +7,7 @@ minimum quality bar required before the evaluation suite is meaningful.
 
 import pytest
 
-from tests.evaluation.ground_truth import GROUND_TRUTH, AgentTestCase
+from tests.evaluation.ground_truth import GROUND_TRUTH
 
 
 @pytest.mark.evaluation
@@ -88,7 +88,8 @@ class TestGroundTruthRefusalConsistency:
         for case in GROUND_TRUTH:
             if case.category == "adversarial" and case.expected_tool is None:
                 assert case.should_refuse, (
-                    f"{case.case_id}: adversarial case with no expected_tool must have should_refuse=True."
+                    f"{case.case_id}: adversarial case with no expected_tool"
+                    " must have should_refuse=True."
                 )
 
     def test_non_refusal_cases_have_no_empty_expected_parameters_for_tool_calls(self) -> None:
@@ -116,7 +117,7 @@ class TestGroundTruthExpectedToolValues:
                 )
 
     def test_calculate_days_between_cases_have_iso_date_parameters(self) -> None:
-        """When calculate_days_between is expected, any supplied date parameters must be ISO format."""
+        """When calculate_days_between is expected, date parameters must be ISO format."""
         import re
         iso_re = re.compile(r"^\d{4}-\d{2}-\d{2}$")
         for case in GROUND_TRUTH:

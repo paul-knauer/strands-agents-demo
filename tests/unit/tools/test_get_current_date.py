@@ -1,6 +1,7 @@
 """Unit tests for the get_current_date tool."""
 
 import datetime
+
 import pytest
 
 from age_calculator.tools import get_current_date

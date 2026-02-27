@@ -1,9 +1,9 @@
 """Unit tests for age_calculator.agent.create_agent."""
 
 import logging
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
 from strands import Agent
 
 
@@ -28,9 +28,10 @@ class TestCreateAgent:
             mock_cls.return_value = MagicMock()
             # Reload config and agent so they pick up the new env var value
             import importlib
+
+            import age_calculator.agent as agent_module
             import age_calculator.config as cfg_module
             importlib.reload(cfg_module)
-            import age_calculator.agent as agent_module
             # Rebind the settings object the agent module uses after reload
             agent_module.settings = cfg_module.Settings()
             agent_module.create_agent()
@@ -81,7 +82,6 @@ class TestAgentModuleConstants:
 
     def test_create_agent_return_annotation_is_agent(self):
         """Return type annotation must be present and reference Agent."""
-        import inspect
         from age_calculator.agent import create_agent
         hints = create_agent.__annotations__
         assert "return" in hints, "create_agent must declare a return type annotation."

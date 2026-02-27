@@ -19,14 +19,13 @@ What is tested here (not in unit tests)
 """
 
 import datetime
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
 from strands import Agent
 
 from age_calculator.agent import SYSTEM_PROMPT, create_agent
 from age_calculator.tools import calculate_days_between, get_current_date
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -117,9 +116,10 @@ class TestBedrockModelConfiguration:
         monkeypatch.setenv("MODEL_ARN", test_arn)
 
         import importlib
+
+        import age_calculator.agent as agent_module
         import age_calculator.config as cfg_module
         importlib.reload(cfg_module)
-        import age_calculator.agent as agent_module
         agent_module.settings = cfg_module.Settings()
 
         with patch("age_calculator.agent.BedrockModel") as mock_cls:
