@@ -252,3 +252,122 @@ class TestPackagePublicAPI:
     def test_create_agent_is_callable(self) -> None:
         from age_calculator import create_agent as ca
         assert callable(ca)
+
+
+# ---------------------------------------------------------------------------
+# invoke_with_audit end-to-end
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+class TestInvokeWithAuditIntegration:
+    """invoke_with_audit must emit a structured audit record on both success and failure.
+
+    Uses a plain MagicMock as the agent so the audit wiring can be tested
+    without triggering a live Bedrock call or the full Strands event loop.
+    """
+
+    def _mock_agent(self, return_value="ok", side_effect=None):
+        m = MagicMock()
+        if side_effect is not None:
+            m.side_effect = side_effect
+        else:
+            m.return_value = return_value
+        return m
+
+    def test_happy_path_returns_agent_response(self) -> None:
+        import json
+        from age_calculator.agent import invoke_with_audit
+        agent = self._mock_agent(return_value="42 days")
+        with patch("age_calculator.agent.audit_logger"):
+            result = invoke_with_audit(agent, "some input")
+        assert result == "42 days"
+
+    def test_happy_path_emits_success_status(self) -> None:
+        import json
+        from age_calculator.agent import invoke_with_audit
+        agent = self._mock_agent()
+        with patch("age_calculator.agent.audit_logger") as mock_audit:
+            invoke_with_audit(agent, "some input")
+        record = json.loads(mock_audit.info.call_args[0][0])
+        assert record["status"] == "success"
+
+    def test_exception_path_emits_error_status(self) -> None:
+        import json
+        from age_calculator.agent import invoke_with_audit
+        agent = self._mock_agent(side_effect=RuntimeError("model error"))
+        with patch("age_calculator.agent.audit_logger") as mock_audit:
+            with pytest.raises(RuntimeError):
+                invoke_with_audit(agent, "some input")
+        record = json.loads(mock_audit.info.call_args[0][0])
+        assert record["status"] == "error"
+
+    def test_session_id_present_in_audit_record(self) -> None:
+        import json
+        from age_calculator.agent import invoke_with_audit
+        agent = self._mock_agent()
+        with patch("age_calculator.agent.audit_logger") as mock_audit:
+            invoke_with_audit(agent, "some input", session_id="integ-session-1")
+        record = json.loads(mock_audit.info.call_args[0][0])
+        assert record["session_id"] == "integ-session-1"
+
+
+# ---------------------------------------------------------------------------
+# Tool validation branches via direct invocation
+# ---------------------------------------------------------------------------
+
+def _tool_result_is_error(result) -> bool:
+    """Return True when the Strands SDK wraps a tool exception as an error dict."""
+    return isinstance(result, dict) and result.get("status") == "error"
+
+
+@pytest.mark.integration
+class TestToolValidationBranchesIntegration:
+    """Validation error branches in the tools must fire correctly when called
+    through the agent's tool registry.
+
+    The Strands SDK catches tool exceptions and wraps them in a
+    ``{'status': 'error', ...}`` dict rather than propagating them, so
+    these tests assert on the returned dict instead of expecting a raise.
+    """
+
+    def test_non_string_start_date_returns_error(self, agent_runner: Agent) -> None:
+        result = agent_runner.tool.calculate_days_between(
+            start_date=19900101, end_date="2024-01-01"  # type: ignore[arg-type]
+        )
+        assert _tool_result_is_error(result)
+
+    def test_non_string_end_date_returns_error(self, agent_runner: Agent) -> None:
+        result = agent_runner.tool.calculate_days_between(
+            start_date="1990-01-01", end_date=None  # type: ignore[arg-type]
+        )
+        assert _tool_result_is_error(result)
+
+    def test_invalid_start_date_format_returns_error(self, agent_runner: Agent) -> None:
+        result = agent_runner.tool.calculate_days_between(
+            start_date="not-a-date", end_date="2024-01-01"
+        )
+        assert _tool_result_is_error(result)
+
+    def test_invalid_end_date_format_returns_error(self, agent_runner: Agent) -> None:
+        result = agent_runner.tool.calculate_days_between(
+            start_date="1990-01-01", end_date="not-a-date"
+        )
+        assert _tool_result_is_error(result)
+
+    def test_start_date_before_1900_returns_error(self, agent_runner: Agent) -> None:
+        result = agent_runner.tool.calculate_days_between(
+            start_date="1899-12-31", end_date="2024-01-01"
+        )
+        assert _tool_result_is_error(result)
+
+    def test_end_date_before_1900_returns_error(self, agent_runner: Agent) -> None:
+        result = agent_runner.tool.calculate_days_between(
+            start_date="1900-01-01", end_date="1899-06-01"
+        )
+        assert _tool_result_is_error(result)
+
+    def test_start_after_end_returns_error(self, agent_runner: Agent) -> None:
+        result = agent_runner.tool.calculate_days_between(
+            start_date="2024-01-02", end_date="2024-01-01"
+        )
+        assert _tool_result_is_error(result)
