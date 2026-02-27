@@ -1,0 +1,202 @@
+name: Agent CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: ncino-banking-agent
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Python dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint with ruff
+        run: ruff check age_calculator/
+
+      - name: Type-check with mypy
+        run: mypy age_calculator/ --strict
+
+      - name: Install CDK dependencies
+        run: npm ci --prefix infrastructure
+
+      - name: Synth and lint CloudFormation
+        run: npx cdk synth --no-staging 2>&1 | cfn-lint
+
+  unit-test:
+    name: Unit Test
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Python dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run unit tests
+        run: pytest tests/unit -v --junitxml=test-results/unit.xml --cov=age_calculator --cov-fail-under=90
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-test-results
+          path: test-results/unit.xml
+
+  evaluate:
+    name: Evaluate
+    runs-on: ubuntu-latest
+    needs: unit-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Python dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run evaluation tests
+        run: pytest tests/evaluation -m evaluation -v --junitxml=test-results/evaluation.xml
+
+      - name: Check tool_selection threshold
+        run: python scripts/check_threshold.py --metric tool_selection --threshold 0.95
+
+      - name: Check refusal_accuracy threshold
+        run: python scripts/check_threshold.py --metric refusal_accuracy --threshold 1.0
+
+      - name: Upload evaluation results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evaluation-results
+          path: test-results/evaluation.xml
+
+  build-and-scan:
+    name: Build and Scan
+    runs-on: ubuntu-latest
+    needs: evaluate
+    outputs:
+      image_tag: ${{ steps.build.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        id: build
+        run: |
+          docker build --target final -t ${{ env.ECR_REPOSITORY }}:${{ github.sha }} .
+          echo "image_tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+          exit-code: 1
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build-and-scan
+    environment: staging
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (staging)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_STAGING_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image to ECR
+        run: |
+          docker build --target final -t ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} .
+          docker push ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+
+      - name: Install CDK dependencies
+        run: npm ci --prefix infrastructure
+
+      - name: Deploy to staging
+        run: npx cdk deploy AgentStack/Staging --require-approval never --app "npx ts-node infrastructure/bin/app.ts"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Python dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run smoke tests against staging
+        run: python scripts/smoke_test.py --environment staging
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (production)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PROD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image to ECR
+        run: |
+          docker build --target final -t ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} .
+          docker push ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+
+      - name: Install CDK dependencies
+        run: npm ci --prefix infrastructure
+
+      - name: Deploy to production
+        run: npx cdk deploy AgentStack/Production --require-approval never --app "npx ts-node infrastructure/bin/app.ts"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Python dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run smoke tests against production
+        run: python scripts/smoke_test.py --environment production
