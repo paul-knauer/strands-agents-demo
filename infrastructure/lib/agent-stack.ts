@@ -21,6 +21,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as cloudwatchActions from 'aws-cdk-lib/aws-cloudwatch-actions';
+import * as kms from 'aws-cdk-lib/aws-kms';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
@@ -215,11 +216,24 @@ export class AgentStack extends cdk.Stack {
     this.logGroupName = logGroup.logGroupName;
 
     // -----------------------------------------------------------------------
+    // KMS Key for SNS encryption
+    // -----------------------------------------------------------------------
+    // A dedicated customer-managed key is created per environment so that
+    // key policies, rotation, and audit trails are environment-scoped.
+    // enableKeyRotation satisfies CIS/NIST automatic annual rotation controls.
+    const alertTopicKey = new kms.Key(this, 'AlertTopicKey', {
+      description: `KMS key for AgentCore SNS alert topic (${environment})`,
+      enableKeyRotation: true,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    // -----------------------------------------------------------------------
     // SNS Alert Topic
     // -----------------------------------------------------------------------
     const alertTopic = new sns.Topic(this, 'AlertTopic', {
       topicName: `agentcore-alerts-${environment}`,
       displayName: `AgentCore alerts — ${environment}`,
+      masterKey: alertTopicKey,
     });
 
     // -----------------------------------------------------------------------

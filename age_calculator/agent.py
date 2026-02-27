@@ -70,7 +70,12 @@ def create_agent() -> Agent:
     return agent
 
 
-def invoke_with_audit(agent: Agent, user_input: str, session_id: str | None = None) -> object:
+def invoke_with_audit(
+    agent: Agent,
+    user_input: str,
+    session_id: str | None = None,
+    user_id: str | None = None,
+) -> object:
     """Invoke the agent and emit a structured SR 11-7 audit record.
 
     Args:
@@ -78,14 +83,18 @@ def invoke_with_audit(agent: Agent, user_input: str, session_id: str | None = No
         user_input: The raw user message to send to the agent.
         session_id: Optional caller-supplied session identifier.  A new UUID
             is generated when not provided.
+        user_id: Optional identifier of the user making the request.  Defaults
+            to ``"system"`` when not provided.
 
     Returns:
         The agent's response object.
     """
     sid = session_id or str(uuid.uuid4())
+    uid = user_id or "system"
     _masked_arn = re.sub(r":\d{12}:", ":****:", settings.model_arn)
     start = time.monotonic()
     status = "success"
+    result = None
     try:
         result = agent(user_input)
         return result
@@ -94,14 +103,32 @@ def invoke_with_audit(agent: Agent, user_input: str, session_id: str | None = No
         raise
     finally:
         latency_ms = round((time.monotonic() - start) * 1000, 2)
+
+        # Extract tool_name and tool_input from the first tool-use content block
+        # in the response message, if any.  The Strands response message is a dict
+        # with a "content" list; each element may carry a "type" of "tool_use".
+        tool_name: str | None = None
+        tool_input: object = None
+        if result is not None:
+            message = getattr(result, "message", None)
+            if isinstance(message, dict):
+                for block in message.get("content", []):
+                    if isinstance(block, dict) and block.get("type") == "tool_use":
+                        tool_name = block.get("name")
+                        tool_input = block.get("input")
+                        break
+
         audit_logger.info(
             json.dumps(
                 {
                     "session_id": sid,
+                    "user_id": uid,
                     "model_id": _masked_arn,
                     "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                     "response_latency_ms": latency_ms,
                     "status": status,
+                    "tool_name": tool_name,
+                    "tool_input": tool_input,
                 }
             )
         )
